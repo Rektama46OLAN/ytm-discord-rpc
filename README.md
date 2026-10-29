@@ -1,5 +1,7 @@
 # YouTube Music → Discord Presence
 
+🇹🇷 **Türkçe** · 🇬🇧 [English](README.en.md)
+
 YouTube Music'te çalan şarkıyı Discord profilinde **"YouTube Music dinliyor"** olarak gösteren küçük bir
 Chrome eklentisi ve yerel köprü. Şarkı adı, sanatçı, albüm kapağı, ilerleme çubuğu ve profilini ziyaret
 eden herkesin tıklayabileceği **"YouTube Music'te dinle"** butonu otomatik gelir. Buton, şarkıyı kendi YouTube
