@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "YT Music Discord Presence",
+  "version": "0.1.0",
+  "description": "YouTube Music'te calan sarkiyi yerel bir kopru uzerinden Discord'a yollar.",
+  "permissions": [],
+  "host_permissions": ["http://127.0.0.1:17463/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://music.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://music.youtube.com/*"],
+      "js": ["main.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
+}
