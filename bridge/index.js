@@ -32,6 +32,13 @@ function log(...args) {
   } catch {}
 }
 
+// The Discord client library rejects pending promises when Discord closes mid-handshake (e.g. while
+// Discord restarts). Unhandled, that kills the process, and a hidden bridge that is gone looks like
+// "the card disappeared". Log such errors and keep running; the supervise loop reconnects.
+process.on('unhandledRejection', (e) => log('yakalanmamis red:', e?.message || JSON.stringify(e) || e));
+process.on('uncaughtException', (e) => log('yakalanmamis hata:', e?.stack || e));
+process.on('exit', (code) => log('kopru kapaniyor, cikis kodu', code));
+
 let rpc = null;
 let ready = false;
 let desired = null; // last presence the extension asked for; re-applied after a reconnect
@@ -185,6 +192,10 @@ const server = http.createServer((req, res) => {
   });
 });
 
+server.on('error', (e) => {
+  log('sunucu hatasi:', e.message);
+  process.exit(1); // e.g. port already in use: another bridge is running
+});
 server.listen(PORT, '127.0.0.1', () => log(`Kopru 127.0.0.1:${PORT} uzerinde dinliyor.`));
 
 process.on('SIGINT', async () => {
