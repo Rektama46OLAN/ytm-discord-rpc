@@ -18,36 +18,55 @@ if (!clientId || clientId === 'YOUR_DISCORD_APPLICATION_ID') {
   process.exit(1);
 }
 
-const rpc = new Client({ clientId });
+let rpc = null;
 let ready = false;
+let desired = null; // last presence the extension asked for; re-applied after a reconnect
 let lastSeen = 0;
 let lastKey = '';
 
-rpc.on('ready', () => {
-  ready = true;
-  console.log('Discord baglandi.');
-});
-rpc.on('disconnected', () => {
-  ready = false;
-  console.log('Discord baglantisi koptu, yeniden denenecek.');
-});
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function connect() {
-  while (!ready) {
-    try {
-      await rpc.login();
-    } catch {
-      await new Promise((r) => setTimeout(r, 5000));
+function newClient() {
+  const c = new Client({ clientId });
+  c.on('ready', () => {
+    if (rpc !== c) return;
+    ready = true;
+    console.log('Discord baglandi.');
+    if (desired) applyPresence(desired).catch(() => {});
+  });
+  c.on('disconnected', () => {
+    if (rpc !== c) return;
+    ready = false;
+    console.log('Discord baglantisi koptu, yeniden denenecek.');
+  });
+  return c;
+}
+
+// Discord often restarts itself at login (updates) or is closed and reopened later,
+// so keep a fresh client and retry for as long as the bridge runs.
+async function supervise() {
+  for (;;) {
+    if (!ready) {
+      try {
+        await rpc?.destroy();
+      } catch {}
+      rpc = newClient();
+      try {
+        await rpc.login();
+      } catch {}
     }
+    await sleep(5000);
   }
 }
-connect();
+supervise();
 
 const pad = (s) => (s && s.length >= 2 ? s : `${s || ''}  `).slice(0, 128);
 
 async function applyPresence(p) {
-  if (!ready) return;
   if (p.paused) return clearPresence();
+  desired = p;
+  lastKey = p.videoId || 'active';
+  if (!ready) return;
 
   const start = Date.now() - Math.round((p.position ?? 0) * 1000);
   const activity = {
@@ -63,12 +82,12 @@ async function applyPresence(p) {
       ? [{ label: "YouTube Music'te dinle", url: `https://music.youtube.com/watch?v=${p.videoId}` }]
       : undefined,
   };
-  lastKey = p.videoId || 'active';
   await rpc.user?.setActivity(activity);
 }
 
 async function clearPresence() {
   lastKey = '';
+  desired = null;
   if (ready) await rpc.user?.clearActivity().catch(() => {});
 }
 
