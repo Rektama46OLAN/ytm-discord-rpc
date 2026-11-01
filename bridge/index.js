@@ -46,7 +46,7 @@ function newClient() {
     if (rpc !== c) return;
     ready = true;
     log('Discord baglandi.');
-    if (desired) applyPresence(desired).catch((e) => log('yeniden uygulama hatasi:', e.message));
+    if (desired) flushPresence().catch((e) => log('yeniden uygulama hatasi:', e.message));
   });
   c.on('disconnected', () => {
     if (rpc !== c) return;
@@ -86,10 +86,10 @@ async function discordCall(promise) {
   try {
     return await Promise.race([promise, timeout]);
   } catch (e) {
-    if (e.message === 'Discord cevap vermedi') {
-      ready = false;
-      log('Discord cevap vermedi, baglanti yenileniyor.');
-    }
+    // Any failure (timeout, or Discord's empty-message error) leaves the connection in an unknown
+    // state; a fresh client fixes it, and `desired` is re-applied once it is ready.
+    ready = false;
+    log('Discord cagrisi basarisiz, baglanti yenileniyor:', e.message || JSON.stringify(e));
     throw e;
   } finally {
     clearTimeout(timer);
@@ -98,13 +98,29 @@ async function discordCall(promise) {
 
 const pad = (s) => (s && s.length >= 2 ? s : `${s || ''}  `).slice(0, 128);
 
+// Discord drops SET_ACTIVITY calls beyond ~5 per 20 s. A track change can produce a few updates in
+// a row, so only the latest one is sent, shortly after the burst.
+const SETTLE_MS = 1200;
+let flushTimer = null;
+
 async function applyPresence(p) {
   if (p.paused) return clearPresence();
-  desired = p;
+  log('gelen:', p.videoId, JSON.stringify(p.title), 'konum', p.position, 'sure', p.duration);
+  desired = { ...p, receivedAt: Date.now() };
   lastKey = p.videoId || 'active';
-  if (!ready || !rpc?.user) return;
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    flushPresence().catch((e) => log('etkinlik hatasi:', e.message));
+  }, SETTLE_MS);
+}
 
-  const start = Date.now() - Math.round((p.position ?? 0) * 1000);
+async function flushPresence() {
+  const p = desired;
+  if (!p || !ready || !rpc?.user) return;
+
+  // Position was read when the extension sent it; add the time that has passed since (also after a reconnect).
+  const elapsed = Date.now() - p.receivedAt;
+  const start = Date.now() - Math.round((p.position ?? 0) * 1000) - elapsed;
   const activity = {
     type: LISTENING,
     details: pad(p.title),
@@ -118,7 +134,12 @@ async function applyPresence(p) {
       ? [{ label: "YouTube Music'te dinle", url: `https://music.youtube.com/watch?v=${p.videoId}` }]
       : undefined,
   };
-  await discordCall(rpc.user.setActivity(activity));
+  try {
+    await discordCall(rpc.user.setActivity(activity));
+  } catch (e) {
+    log('etkinlik hatasi detay:', String(e?.message || JSON.stringify(e) || e), JSON.stringify(activity));
+    throw e;
+  }
   log('etkinlik ayarlandi:', p.title, '-', p.artist);
 }
 
@@ -126,6 +147,7 @@ async function clearPresence() {
   const wasActive = Boolean(lastKey);
   lastKey = '';
   desired = null;
+  clearTimeout(flushTimer);
   if (ready && rpc?.user) {
     await discordCall(rpc.user.clearActivity()).catch((e) => log('temizleme hatasi:', e.message));
     if (wasActive) log('etkinlik temizlendi.');
